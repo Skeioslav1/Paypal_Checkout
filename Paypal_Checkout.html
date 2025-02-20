@@ -7,80 +7,96 @@
     <style>
         body {
             padding: 20px;
+            display: none; /* Hide body initially */
         }
         h1 {
             text-align: center;
         }
     </style>
     <script>
-    function getQueryParams() {
-        const params = new URLSearchParams(window.location.search);
-        return {
-            email: params.get('email') || '',
-            Auth_Token: params.get('Auth_Token') || '',
-            Table_Id: params.get('Table_Id') || '',
-            Plan_Name: params.get('Plan_Name') || 'Default Plan',
-            Cost: params.get('Cost') || '0.00',
-            Client_Id: params.get('Client_Id') || ''
-        };
-    }
-
-    const paymentData = getQueryParams();
-
-    // Update page content dynamically
-    document.addEventListener("DOMContentLoaded", function () {
-        document.getElementById("plan-name").textContent = paymentData.Plan_Name;
-        document.getElementById("cost").textContent = paymentData.Cost;
-
-        if (paymentData.Client_Id) {
-            // Dynamically load PayPal SDK script
-            const script = document.createElement("script");
-            script.src = `https://www.paypal.com/sdk/js?client-id=${paymentData.Client_Id}`;
-            script.onload = loadPayPalButtons;
-            document.body.appendChild(script);
-        }
-    });
-
-    function loadPayPalButtons() {
-        paypal.Buttons({
-            createOrder: function (data, actions) {
-                return actions.order.create({
-                    purchase_units: [{
-                        amount: { value: paymentData.Cost }
-                    }],
-                    application_context: {
-                        shipping_preference: "NO_SHIPPING"
-                    }
-                });
-            },
-            onApprove: function (data, actions) {
-                return actions.order.capture().then(function (details) {
-                    alert("Payment Completed\n\nYour payment was successful. You can now return to the app to continue using your subscription.");
-                    
-                    const endpoint = `https://api.baserow.io/api/database/rows/table/${paymentData.Table_Id}/?user_field_names=true`;
-
-                    fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Token ${paymentData.Auth_Token}`
-                        },
-                        body: JSON.stringify({
-                            email: paymentData.email,
-                            amount: details.purchase_units[0].amount.value,
-                            transaction_id: details.id,
-                            paid_at: new Date().toISOString(),
-                            Plan_Name: paymentData.Plan_Name
-                        })
-                    }).then(response => response.json())
-                      .then(data => console.log('Success:', data))
-                      .catch(error => console.error('Error:', error));
-                });
+        function getPaymentData() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const paymentData = {
+                    email: params.get('email') || '',
+                    Auth_Token: params.get('Auth_Token') || '',
+                    Table_Id: params.get('Table_Id') || '',
+                    Plan_Name: params.get('Plan_Name') || 'Default Plan',
+                    Cost: params.get('Cost') || '0.00',
+                    Client_Id: params.get('Client_Id') || ''
+                };
+                
+                // Check if any required field is missing
+                if (!paymentData.email || !paymentData.Auth_Token || !paymentData.Table_Id || !paymentData.Client_Id) {
+                    console.error("Missing required payment data.");
+                    return null;
+                }
+                return paymentData;
+            } catch (error) {
+                console.error("Error processing payment data: ", error);
+                return null;
             }
-        }).render('#paypal-button-container');
-    }
-</script>
+        }
 
+        const paymentData = getPaymentData();
+
+        if (paymentData) {
+            document.addEventListener("DOMContentLoaded", function () {
+                document.body.style.display = "block"; // Show body only if data is valid
+                document.getElementById("plan-name").textContent = paymentData.Plan_Name;
+                document.getElementById("cost").textContent = paymentData.Cost;
+                
+                const script = document.createElement("script");
+                script.src = `https://www.paypal.com/sdk/js?client-id=${paymentData.Client_Id}`;
+                script.onload = loadPayPalButtons;
+                document.body.appendChild(script);
+            });
+        }
+
+        function loadPayPalButtons() {
+            paypal.Buttons({
+                createOrder: function (data, actions) {
+                    return actions.order.create({
+                        purchase_units: [{
+                            amount: { value: paymentData.Cost }
+                        }],
+                        application_context: {
+                            shipping_preference: "NO_SHIPPING"
+                        }
+                    });
+                },
+                onApprove: function (data, actions) {
+                    return actions.order.capture().then(function (details) {
+                        alert("Payment Completed\n\nYour payment was successful. You can now return to the app to continue using your subscription.");
+                        
+                        const endpoint = `https://api.baserow.io/api/database/rows/table/${paymentData.Table_Id}/?user_field_names=true`;
+                        
+                        fetch(endpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Token ${paymentData.Auth_Token}`
+                            },
+                            body: JSON.stringify({
+                                email: paymentData.email,
+                                amount: details.purchase_units[0].amount.value,
+                                transaction_id: details.id,
+                                paid_at: new Date().toISOString(),
+                                Plan_Name: paymentData.Plan_Name
+                            })
+                        }).then(response => response.json())
+                          .then(data => console.log('Success:', data))
+                          .catch(error => console.error('Error:', error));
+                    });
+                }
+            }).render('#paypal-button-container');
+        }
+    </script>
+</head>
+<body>
+    <h1>Complete Checkout</h1>
+    <p style="text-align: center;">Plan: <strong><span id="plan-name"></span></strong> - Cost: <strong>$<span id="cost"></span></strong></p>
+    
+    <div id="paypal-button-container"></div>
 </body>
 </html>
-
